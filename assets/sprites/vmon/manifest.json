@@ -25,12 +25,16 @@
   ],
   "attack1": [
     "band3_f0.png",
-    "band3_f1.png"
+    "band3_f1.png",
+    "band3_f2.png",
+    "band3_f3.png",
+    "band3_f4.png"
   ],
   "attack2": [
-    "band3_f2.png",
-    "band3_f4.png",
-    "band3_f5.png"
+    "band3_f5.png",
+    "band3_f6.png",
+    "band3_f7.png",
+    "band3_f8.png"
   ],
   "special": [
     "band4_f0.png",

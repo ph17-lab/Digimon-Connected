@@ -59,12 +59,31 @@ const HUD = {
     canvas.addEventListener('touchstart', handler, { passive: false });
   },
 
+  scale: 1,
+  W: 960,   // logical HUD design-space size (canvas size divided by scale)
+  H: 540,
+
   draw(ctx, state) {
-    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    const cw = this.canvas.width, ch = this.canvas.height;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, cw, ch);
+    // shrink the whole HUD on screens narrower than the 960x540 design space
+    // so the status panel, minimap and Digivice never collide
+    const s = this.scale = Math.min(1, Math.max(0.55, Math.min(cw / 960, ch / 540)));
+    this.W = cw / s;
+    this.H = ch / s;
+    this._isMobile = typeof Settings !== 'undefined' && Settings.platform === 'mobile';
+    ctx.save();
+    ctx.scale(s, s);
     this._drawStatus(ctx, state);
     this._drawMinimap(ctx, state);
     this._drawDigivice(ctx, state);
     this._drawEvolveButton(ctx, state);
+    ctx.restore();
+
+    // pulse the mobile DNA button whenever digivolution is ready
+    const evolveBtn = document.getElementById('btn-evolve');
+    if (evolveBtn) evolveBtn.classList.toggle('ready', !!state.canEvolve && !state.evolved);
   },
 
   _drawStatus(ctx, state) {
@@ -114,7 +133,8 @@ const HUD = {
 
   _drawMinimap(ctx, state) {
     const L = HUD_LAYOUT.minimap;
-    const x0 = this.canvas.width - L.w - 14;
+    // on mobile, leave room at the far right for the pause touch button
+    const x0 = this.W - L.w - (this._isMobile ? 90 : 14);
     const img = Assets.getHud('hud_minimap');
     if (img) ctx.drawImage(img, x0, L.y, L.w, L.h);
     else this._fallbackPanel(ctx, x0, L.y, L.w, L.h);
@@ -158,15 +178,20 @@ const HUD = {
 
   _drawDigivice(ctx, state) {
     const L = HUD_LAYOUT.digivice;
-    const y0 = this.canvas.height - L.h - 14;
+    // on mobile the bottom-left corner belongs to the touch d-pad, so the
+    // Digivice moves to the bottom-center gap between the two touch clusters
+    const x0 = this._isMobile ? (this.W - L.w) / 2 : L.x;
+    const y0 = this.H - L.h - 14;
     const img = Assets.getHud('hud_digivice');
-    if (img) ctx.drawImage(img, L.x, y0, L.w, L.h);
-    else this._fallbackPanel(ctx, L.x, y0, L.w, L.h);
+    if (img) ctx.drawImage(img, x0, y0, L.w, L.h);
+    else this._fallbackPanel(ctx, x0, y0, L.w, L.h);
 
+    const s = this.scale;
     this._rects = {};
     for (const btn of L.buttons) {
-      const bx = L.x + btn.x, by = y0 + btn.y;
-      this._rects[btn.key] = { x: bx, y: by, w: btn.w, h: btn.h };
+      const bx = x0 + btn.x, by = y0 + btn.y;
+      // stored in device pixels so the click handler needs no conversion
+      this._rects[btn.key] = { x: bx * s, y: by * s, w: btn.w * s, h: btn.h * s };
       if (!img) {
         ctx.fillStyle = btn.color;
         roundRectPath(ctx, bx, by, btn.w, btn.h, 8);
@@ -177,7 +202,8 @@ const HUD = {
 
   _drawEvolveButton(ctx, state) {
     if (state.evolved || !state.canEvolve) return;
-    const x = this.canvas.width / 2, y = this.canvas.height - 60;
+    if (this._isMobile) return; // mobile uses the pulsing DNA touch button instead
+    const x = this.W / 2, y = this.H - 60;
     const pulse = 1 + Math.sin(performance.now() / 200) * 0.06;
     ctx.save();
     ctx.translate(x, y);

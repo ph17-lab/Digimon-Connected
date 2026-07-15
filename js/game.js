@@ -38,6 +38,26 @@ const Game = {
     this.ctx = canvas.getContext('2d');
   },
 
+  // re-derive the internal canvas resolution from the real screen aspect
+  // ratio: height is fixed at the 540px design space (level geometry depends
+  // on it), width follows the device so nothing gets letterboxed or squeezed
+  resize() {
+    const vw = Math.max(1, window.innerWidth);
+    const vh = Math.max(1, window.innerHeight);
+    const aspect = Math.min(Math.max(vw / vh, 0.5), 3.2);
+    const H = 540;
+    const W = Math.round(H * aspect);
+    if (this.canvas.width !== W || this.canvas.height !== H) {
+      this.canvas.width = W;
+      this.canvas.height = H;
+    }
+    const hudCanvas = HUD.canvas || document.getElementById('hud-canvas');
+    if (hudCanvas && (hudCanvas.width !== W || hudCanvas.height !== H)) {
+      hudCanvas.width = W;
+      hudCanvas.height = H;
+    }
+  },
+
   // -------------------------------------------------------------- lifecycle
   startNewGame(rookieId) {
     this.player = new Player(rookieId, 0, 0);

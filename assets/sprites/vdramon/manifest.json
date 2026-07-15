@@ -11,17 +11,12 @@
     "band1_f2.png",
     "band1_f3.png",
     "band1_f4.png",
-    "band1_f5.png",
-    "band1_f6.png",
-    "band1_f7.png",
-    "band1_f8.png",
-    "band1_f9.png",
-    "band1_f10.png"
+    "band1_f5.png"
   ],
   "jump": [
-    "band1_f0.png",
-    "band1_f1.png",
-    "band1_f2.png"
+    "band1_f6.png",
+    "band1_f7.png",
+    "band1_f8.png"
   ],
   "fall": [
     "band1_f9.png",
