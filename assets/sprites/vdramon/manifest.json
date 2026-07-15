@@ -1,0 +1,50 @@
+{
+  "idle": [
+    "band0_f0.png",
+    "band0_f1.png",
+    "band0_f2.png",
+    "band0_f3.png"
+  ],
+  "walk": [
+    "band1_f0.png",
+    "band1_f1.png",
+    "band1_f2.png",
+    "band1_f3.png",
+    "band1_f4.png",
+    "band1_f5.png",
+    "band1_f6.png",
+    "band1_f7.png",
+    "band1_f8.png",
+    "band1_f9.png",
+    "band1_f10.png"
+  ],
+  "jump": [
+    "band1_f0.png",
+    "band1_f1.png",
+    "band1_f2.png"
+  ],
+  "fall": [
+    "band1_f9.png",
+    "band1_f10.png"
+  ],
+  "attack1": [
+    "band2_f0.png",
+    "band2_f1.png",
+    "band2_f2.png",
+    "band2_f3.png"
+  ],
+  "attack2": [
+    "band2_f4.png",
+    "band2_f5.png",
+    "band2_f6.png",
+    "band2_f7.png"
+  ],
+  "special": [
+    "band3_f0.png",
+    "band3_f1.png",
+    "band3_f2.png",
+    "band3_f3.png",
+    "band3_f4.png",
+    "band3_f5.png"
+  ]
+}
