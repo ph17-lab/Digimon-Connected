@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Digimon Connected</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ===================== GAME CANVAS ===================== -->
+  <canvas id="game" width="960" height="540"></canvas>
+
+  <!-- ===================== HUD (in-game) ===================== -->
+  <div id="hud" class="hidden">
+    <canvas id="hud-canvas" width="960" height="540"></canvas>
+  </div>
+
+  <!-- ===================== MOBILE TOUCH CONTROLS ===================== -->
+  <div id="touch-controls" class="hidden">
+    <div class="touch-left">
+      <button id="btn-left" class="touch-btn dpad" data-action="left">◀</button>
+      <button id="btn-right" class="touch-btn dpad" data-action="right">▶</button>
+    </div>
+    <div class="touch-right">
+      <button id="btn-special" class="touch-btn small" data-action="special">SP</button>
+      <button id="btn-attack" class="touch-btn big" data-action="attack">M1</button>
+      <button id="btn-jump" class="touch-btn big" data-action="jump">⤒</button>
+      <button id="btn-evolve" class="touch-btn small evolve" data-action="evolve">DNA</button>
+    </div>
+    <button id="btn-pause" class="touch-btn pause" data-action="pause">II</button>
+  </div>
+
+  <!-- ===================== FIRST RUN: PLATFORM SELECT ===================== -->
+  <div id="screen-platform" class="screen">
+    <h1 class="title">DIGIMON CONNECTED</h1>
+    <p class="subtitle">Escolha sua plataforma</p>
+    <div class="platform-choices">
+      <button class="platform-btn" data-platform="pc">
+        <div class="platform-icon">🖥️</div>
+        <span>PC</span>
+        <small>Teclado</small>
+      </button>
+      <button class="platform-btn" data-platform="mobile">
+        <div class="platform-icon">📱</div>
+        <span>Dispositivo Móvel</span>
+        <small>Toque na tela</small>
+      </button>
+    </div>
+  </div>
+
+  <!-- ===================== MAIN MENU ===================== -->
+  <div id="screen-main" class="screen hidden">
+    <h1 class="title">DIGIMON CONNECTED</h1>
+    <nav class="menu-list">
+      <button data-menu-action="new-game">Novo Jogo</button>
+      <button data-menu-action="continue">Continuar</button>
+      <button data-menu-action="settings">Configurações</button>
+      <button data-menu-action="credits">Créditos</button>
+      <button data-menu-action="exit">Sair</button>
+    </nav>
+  </div>
+
+  <!-- ===================== CHARACTER SELECT ===================== -->
+  <div id="screen-charselect" class="screen hidden">
+    <h1 class="title">Escolha seu Parceiro</h1>
+    <div id="char-cards" class="char-cards"></div>
+    <div class="screen-footer">
+      <button data-menu-action="back-main" class="btn-ghost">Voltar</button>
+      <button data-menu-action="confirm-char" class="btn-primary" disabled id="btn-confirm-char">Começar</button>
+    </div>
+  </div>
+
+  <!-- ===================== SETTINGS ===================== -->
+  <div id="screen-settings" class="screen hidden">
+    <h1 class="title">Configurações</h1>
+    <div class="settings-body">
+      <div class="settings-row">
+        <label>Plataforma</label>
+        <div class="segmented">
+          <button data-set-platform="pc">PC</button>
+          <button data-set-platform="mobile">Mobile</button>
+        </div>
+      </div>
+      <div class="settings-row">
+        <label>Volume Música</label>
+        <input type="range" id="vol-music" min="0" max="100" value="60">
+      </div>
+      <div class="settings-row">
+        <label>Volume Efeitos</label>
+        <input type="range" id="vol-sfx" min="0" max="100" value="80">
+      </div>
+      <div id="keybind-section">
+        <h3>Teclas (clique e pressione uma tecla)</h3>
+        <div class="keybind-grid" id="keybind-grid"></div>
+      </div>
+    </div>
+    <div class="screen-footer">
+      <button data-menu-action="back-main" class="btn-ghost">Voltar</button>
+    </div>
+  </div>
+
+  <!-- ===================== CREDITS ===================== -->
+  <div id="screen-credits" class="screen hidden">
+    <h1 class="title">Créditos</h1>
+    <div class="credits-body">
+      <p><strong>Digimon Connected</strong> — Fan game não-oficial.</p>
+      <p>Digimon é uma propriedade da Bandai / Toei Animation.</p>
+      <p>Desenvolvido com HTML5 Canvas, CSS e JavaScript puro.</p>
+      <p>Sprites, HUD, música e efeitos gerados proceduralmente neste projeto.</p>
+    </div>
+    <div class="screen-footer">
+      <button data-menu-action="back-main" class="btn-ghost">Voltar</button>
+    </div>
+  </div>
+
+  <!-- ===================== PAUSE MENU ===================== -->
+  <div id="screen-pause" class="screen overlay-screen hidden">
+    <h1 class="title">Pausado</h1>
+    <nav class="menu-list">
+      <button data-menu-action="resume">Continuar</button>
+      <button data-menu-action="save-now">Salvar Jogo</button>
+      <button data-menu-action="settings">Configurações</button>
+      <button data-menu-action="quit-to-menu">Menu Principal</button>
+    </nav>
+  </div>
+
+  <!-- ===================== GAME OVER ===================== -->
+  <div id="screen-gameover" class="screen overlay-screen hidden">
+    <h1 id="gameover-title" class="title title-danger">FIM DE JOGO</h1>
+    <p id="gameover-info" class="subtitle"></p>
+    <nav class="menu-list">
+      <button data-menu-action="retry-checkpoint">Voltar ao Checkpoint</button>
+      <button data-menu-action="quit-to-menu">Menu Principal</button>
+    </nav>
+  </div>
+
+  <!-- ===================== DIGIVICE PANEL MENUS (in-game overlays) ===================== -->
+  <div id="panel-evolution" class="digivice-panel hidden">
+    <h2>Digievolução</h2>
+    <div id="evolution-list" class="evolution-list"></div>
+    <button class="btn-ghost panel-close" data-menu-action="close-panel">Fechar</button>
+  </div>
+
+  <div id="panel-backpack" class="digivice-panel hidden">
+    <h2>Mochila</h2>
+    <div id="backpack-grid" class="backpack-grid"></div>
+    <button class="btn-ghost panel-close" data-menu-action="close-panel">Fechar</button>
+  </div>
+
+  <div id="panel-save" class="digivice-panel hidden">
+    <h2>Salvar Jogo</h2>
+    <p id="save-status-text">—</p>
+    <div class="screen-footer">
+      <button class="btn-primary" data-menu-action="do-save">Salvar Agora</button>
+      <button class="btn-ghost panel-close" data-menu-action="close-panel">Fechar</button>
+    </div>
+  </div>
+
+  <div id="panel-map" class="digivice-panel hidden">
+    <h2>Mapa</h2>
+    <canvas id="map-canvas" width="700" height="360"></canvas>
+    <button class="btn-ghost panel-close" data-menu-action="close-panel">Fechar</button>
+  </div>
+
+  <!-- ===================== TOAST / NOTIFICATIONS ===================== -->
+  <div id="toast" class="toast hidden"></div>
+
+</div>
+
+<script src="js/data.js"></script>
+<script src="js/assets.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/input.js"></script>
+<script src="js/save.js"></script>
+<script src="js/sprites.js"></script>
+<script src="js/particles.js"></script>
+<script src="js/entities.js"></script>
+<script src="js/hud.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/game.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

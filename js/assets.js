@@ -3,6 +3,13 @@
  * sheets) and HUD panels. Falls back to a procedurally drawn placeholder
  * (see sprites.js / hud.js) for anything that fails to load, so the game
  * always runs even if an asset is missing.
+ *
+ * Two loading modes:
+ *  - standalone (single-file build): window.EMBEDDED_MANIFESTS / EMBEDDED_IMAGES
+ *    are inlined data (base64 data: URIs) baked in ahead of this script by
+ *    build.py — no network requests at all, works from a plain file:// open.
+ *  - dev mode (this repo's multi-file index.html): falls back to fetch()-ing
+ *    assets/sprites/<id>/manifest.json and the referenced PNG files.
  */
 'use strict';
 
@@ -35,9 +42,9 @@ const Assets = {
 
   async _loadCharacter(id) {
     try {
-      const res = await fetch(`assets/sprites/${id}/manifest.json`);
-      if (!res.ok) return;
-      const manifest = await res.json();
+      const embedded = typeof EMBEDDED_MANIFESTS !== 'undefined' ? EMBEDDED_MANIFESTS[id] : null;
+      const manifest = embedded || await fetch(`assets/sprites/${id}/manifest.json`).then(r => r.ok ? r.json() : null);
+      if (!manifest) return;
       const entry = {};
       const jobs = [];
       for (const state of ANIM_STATES) {
@@ -45,7 +52,8 @@ const Assets = {
         if (!files || !files.length) continue;
         entry[state] = new Array(files.length);
         files.forEach((fn, i) => {
-          jobs.push(this._loadImage(`assets/sprites/${id}/${fn}`).then(img => { entry[state][i] = img; }));
+          const src = this._resolveSrc(`sprites/${id}/${fn}`, `assets/sprites/${id}/${fn}`);
+          jobs.push(this._loadImage(src).then(img => { entry[state][i] = img; }));
         });
       }
       await Promise.all(jobs);
@@ -58,9 +66,16 @@ const Assets = {
 
   async _loadHudPart(part) {
     try {
-      const img = await this._loadImage(`assets/hud/${part}.png`);
+      const src = this._resolveSrc(`hud/${part}.png`, `assets/hud/${part}.png`);
+      const img = await this._loadImage(src);
       this.hud[part] = img;
     } catch (e) { /* fall back to procedural HUD */ }
+  },
+
+  // embedded (base64 data: URI) key first, plain relative path as dev fallback
+  _resolveSrc(embeddedKey, path) {
+    if (typeof EMBEDDED_IMAGES !== 'undefined' && EMBEDDED_IMAGES[embeddedKey]) return EMBEDDED_IMAGES[embeddedKey];
+    return path;
   },
 
   _loadImage(src) {
