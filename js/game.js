@@ -35,6 +35,9 @@ const Game = {
   enemies: [],
   boss: null,
   projectiles: [],   // player special-attack projectiles
+  floatTexts: [],    // rising damage/XP numbers
+  ambient: [],       // themed ambience particles (leaves/embers/motes)
+  bannerText: null, bannerT: 0,
   particles: new ParticleSystem(),
   shake: new ScreenShake(),
   cameraX: 0,
@@ -122,10 +125,22 @@ const Game = {
     this.doorOpen = false;
     this.levelComplete = false;
     this.projectiles = [];
+    this.floatTexts = [];
+    this.ambient = [];
     this.particles.clear();
     UI.clearToast();
-    this.cameraX = Math.max(0, Math.min(cp.x - this.canvas.width / 2, level.width - this.canvas.width));
+    this.cameraX = Math.max(0, Math.min(cp.x - this.canvas.width * 0.42, level.width - this.canvas.width));
+    this.banner(level.name.toUpperCase());
     AudioSys.playTheme(level.ambient);
+  },
+
+  addText(x, y, txt, color) {
+    this.floatTexts.push({ x, y, txt, color, life: 900 });
+  },
+
+  banner(txt) {
+    this.bannerText = txt;
+    this.bannerT = 2300;
   },
 
   respawnAtCheckpoint() {
@@ -161,6 +176,7 @@ const Game = {
     // spawn boss lazily once player gets near
     if (!this.boss && this._bossSpawn && this.player.x > this._bossSpawn.x - 500) {
       this.boss = new Boss(this._bossSpawn.type, this._bossSpawn.x, this._bossSpawn.y);
+      this.banner(this.boss.name.toUpperCase() + ' APARECEU!');
     }
 
     for (const en of this.enemies) en.update(dt, solids, this.player, this.particles);
@@ -183,8 +199,14 @@ const Game = {
     this.enemies = this.enemies.filter(e => !(e.dead && e.deathTimer <= 0));
     this.particles.update(dt);
     this.shake.update(dt);
+    this._updateJuice(dt);
 
-    this.cameraX = Math.max(0, Math.min(this.player.x - this.canvas.width / 2, this.level.width - this.canvas.width));
+    // camera: ease toward the player with look-ahead in the facing direction —
+    // smooth glide instead of a hard center-lock
+    const lead = this.canvas.width * (this.player.facing === 1 ? 0.42 : 0.58);
+    const targetCam = this.player.x - lead;
+    this.cameraX += (targetCam - this.cameraX) * Math.min(1, dt / 1000 * 6);
+    this.cameraX = Math.max(0, Math.min(this.cameraX, this.level.width - this.canvas.width));
 
     if (this.player.dead && this.appState === APP_STATE.PLAYING) {
       AudioSys.sfx('gameover');
@@ -199,11 +221,50 @@ const Game = {
   _hitEnemy(en, dmg, knockDir) {
     en.takeDamage(dmg, knockDir, this.particles);
     this.shake.trigger(4, 100);
+    this.addText(en.x, en.y - en.height - 18, String(Math.round(dmg)), '#ffd23f');
     if (en.dead) {
+      this.addText(en.x, en.y - en.height - 38, `+${en.def.expReward} XP`, '#37d67a');
+      const lvlBefore = this.player.level;
       this.player.gainExp(en.def.expReward);
+      if (this.player.level > lvlBefore) this.banner(`NÍVEL ${this.player.level}!`);
       this.player.gainDigiSoul(en.def.soulReward || 10);
       if (en.isBoss) this.player.defeatedBosses.add(this.level.id);
     }
+  },
+
+  // floating texts, banner timer, and themed ambient particles
+  _updateJuice(dt) {
+    const dtS = dt / 1000;
+    for (let i = this.floatTexts.length - 1; i >= 0; i--) {
+      const t = this.floatTexts[i];
+      t.y -= 42 * dtS;
+      t.life -= dt;
+      if (t.life <= 0) this.floatTexts.splice(i, 1);
+    }
+    if (this.bannerT > 0) this.bannerT -= dt;
+
+    const kind = { forest: 'leaf', city: 'mote', volcano: 'ember', castle: 'mote' }[this.level.ambient] || 'mote';
+    const W = this.canvas.width, H = this.canvas.height;
+    while (this.ambient.length < 24) {
+      this.ambient.push({
+        kind,
+        x: this.cameraX + Math.random() * (W + 200) - 100,
+        y: kind === 'ember' ? this.level.groundY - Math.random() * 30 : -20 - Math.random() * 90,
+        vx: (Math.random() - 0.5) * 26,
+        vy: kind === 'ember' ? -(36 + Math.random() * 55) : kind === 'mote' ? 14 + Math.random() * 18 : 38 + Math.random() * 34,
+        ph: Math.random() * 6.28,
+        sz: 2 + Math.random() * 2.5
+      });
+    }
+    for (const a of this.ambient) {
+      a.ph += dtS * 2.4;
+      a.x += (a.vx + Math.sin(a.ph) * 20) * dtS;
+      a.y += a.vy * dtS;
+    }
+    this.ambient = this.ambient.filter(a => {
+      if (a.kind === 'ember') return a.y > -30 && a.x > this.cameraX - 150 && a.x < this.cameraX + W + 150;
+      return a.y < H + 20 && a.x > this.cameraX - 150 && a.x < this.cameraX + W + 150;
+    });
   },
 
   _resolvePlayerAttacks() {
@@ -471,8 +532,11 @@ const Game = {
     this.player.draw(ctx, this.cameraX);
     this._drawProjectiles(ctx);
     this.particles.draw(ctx, this.cameraX);
+    this._drawAmbient(ctx);
+    this._drawFloatTexts(ctx);
 
     if (this.boss && !this.boss.dead) this._drawBossBar(ctx, w);
+    this._drawBanner(ctx, w, h);
 
     ctx.restore();
 
@@ -754,6 +818,55 @@ const Game = {
     ctx.beginPath(); ctx.arc(x, y + 20, 14, 0, Math.PI * 2); ctx.fill();
   },
 
+  _drawAmbient(ctx) {
+    const colors = { leaf: '#8fd06a', mote: '#5fd3ff', ember: '#ff9040' };
+    for (const a of this.ambient) {
+      ctx.globalAlpha = a.kind === 'mote' ? 0.5 : 0.75;
+      ctx.fillStyle = colors[a.kind] || '#fff';
+      const x = a.x - this.cameraX;
+      if (a.kind === 'leaf') {
+        ctx.save();
+        ctx.translate(x, a.y);
+        ctx.rotate(Math.sin(a.ph) * 0.8);
+        ctx.fillRect(-a.sz, -a.sz / 2, a.sz * 2, a.sz);
+        ctx.restore();
+      } else {
+        ctx.beginPath(); ctx.arc(x, a.y, a.sz, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+  },
+
+  _drawFloatTexts(ctx) {
+    ctx.font = 'bold 15px monospace';
+    ctx.textAlign = 'center';
+    for (const t of this.floatTexts) {
+      ctx.globalAlpha = Math.min(1, t.life / 500);
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillText(t.txt, t.x - this.cameraX + 1, t.y + 1);
+      ctx.fillStyle = t.color;
+      ctx.fillText(t.txt, t.x - this.cameraX, t.y);
+    }
+    ctx.globalAlpha = 1;
+    ctx.textAlign = 'left';
+  },
+
+  _drawBanner(ctx, w, h) {
+    if (this.bannerT <= 0 || !this.bannerText) return;
+    const t = this.bannerT;
+    const alpha = Math.min(1, (2300 - t) / 250, t / 500);
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, alpha);
+    ctx.font = 'bold 30px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillText(this.bannerText, w / 2 + 2, h * 0.3 + 2);
+    ctx.fillStyle = '#ffd23f';
+    ctx.fillText(this.bannerText, w / 2, h * 0.3);
+    ctx.restore();
+    ctx.textAlign = 'left';
+  },
+
   _drawBossBar(ctx, w) {
     const b = this.boss;
     const barW = w * 0.6, x = (w - barW) / 2, y = 26;
@@ -766,7 +879,7 @@ const Game = {
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 13px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText(b.name + (b.phase === 2 ? ' — FÚRIA' : ''), w / 2, y + 13);
+    ctx.fillText(b.name + (b.bossPhase === 2 ? ' — FÚRIA' : ''), w / 2, y + 13);
     ctx.textAlign = 'left';
   }
 };

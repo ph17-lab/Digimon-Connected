@@ -230,9 +230,11 @@ const LEVELS = [
 // ---------------------------------------------------------------------------
 const ENEMY_DEFS = {
   kunemon:  { name: 'Kunemon',  hp: 30, atk: 6,  speed: 70,  color: '#7a4bb0', w: 44, h: 34, expReward: 12, soulReward: 12, behavior: 'patrol' },
-  goblimon: { name: 'Goblimon', hp: 46, atk: 9,  speed: 90,  color: '#8a6a3a', w: 44, h: 56, expReward: 18, soulReward: 16, behavior: 'chase' },
-  bakemon:  { name: 'Bakemon',  hp: 38, atk: 8,  speed: 110, color: '#d8d8f0', w: 42, h: 58, expReward: 16, soulReward: 15, behavior: 'chase' },
-  tankmon:  { name: 'Tankmon',  hp: 70, atk: 12, speed: 55,  color: '#5a6a7a', w: 56, h: 60, expReward: 26, soulReward: 22, behavior: 'patrol' }
+  goblimon: { name: 'Goblimon', hp: 46, atk: 9,  speed: 90,  color: '#7a9a4a', w: 44, h: 56, expReward: 18, soulReward: 16, behavior: 'chase' },
+  bakemon:  { name: 'Bakemon',  hp: 38, atk: 8,  speed: 92,  color: '#e4e4f2', w: 42, h: 58, expReward: 16, soulReward: 15,
+              behavior: 'chase', fly: true, ranged: true, projSpeed: 260, fireInterval: 2600, projColor: '#b060ff' },
+  tankmon:  { name: 'Tankmon',  hp: 70, atk: 12, speed: 55,  color: '#5a6a7a', w: 56, h: 60, expReward: 26, soulReward: 22,
+              behavior: 'patrol', ranged: true, projSpeed: 330, fireInterval: 2900, projColor: '#ff8840' }
 };
 
 const BOSS_DEFS = {

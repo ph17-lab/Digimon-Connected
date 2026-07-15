@@ -5,10 +5,10 @@
  */
 'use strict';
 
-const GRAVITY = 2100;
+const GRAVITY = 1850;           // lighter gravity = floatier, more readable jumps
 const MAX_FALL_SPEED = 980;
-const GROUND_FRICTION = 2200;
-const AIR_CONTROL = 0.7;
+const MOVE_SMOOTH_GROUND = 14;  // exponential approach rates for velocity
+const MOVE_SMOOTH_AIR = 10;
 
 function getAABB(e) { return { x: e.x - e.width / 2, y: e.y - e.height, w: e.width, h: e.height }; }
 function rectsOverlap(a, b) { return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
@@ -167,6 +167,9 @@ class Player {
     this.hurtTimer = 260;
     this.vy = -260;
     this.knockbackX = knockbackDir * 320;
+    if (typeof Game !== 'undefined' && Game.addText) {
+      Game.addText(this.x, this.y - this.height - 14, '-' + Math.round(amount), '#e5484d');
+    }
     if (particles) particles.burst(this.x, this.y - this.height * 0.6, '#ff4040', 8, { speed: 140, life: 300 });
     if (shake) shake.trigger(6, 180);
     if (AudioSys) AudioSys.sfx('hurt');
@@ -217,7 +220,7 @@ class Player {
     if (this.dead) return;
     const moveDir = (inp.isDown('right') ? 1 : 0) - (inp.isDown('left') ? 1 : 0);
     this._moveDir = moveDir;
-    if (moveDir !== 0 && !this.attackState) this.facing = moveDir;
+    if (moveDir !== 0) this.facing = moveDir;
 
     if (inp.pressed('jump') && this.grounded && !this.attackState) {
       this.vy = -this.jumpForce;
@@ -239,20 +242,20 @@ class Player {
     if (this.dead) { this.vy += GRAVITY * dt / 1000; return; }
     const dtS = dt / 1000;
 
-    // horizontal movement
-    let targetVx = 0;
-    if (!this.attackState) {
-      targetVx = (this._moveDir || 0) * this.speed;
-    }
-    const accel = this.grounded ? GROUND_FRICTION : GROUND_FRICTION * AIR_CONTROL;
+    // horizontal movement: exponential approach toward the target velocity —
+    // smooth ramp-up and glide-to-stop instead of a hard linear clamp.
+    // Attacking on the ground slows you to 25% instead of freezing you;
+    // air attacks keep full control.
+    const attackFactor = this.attackState ? (this.grounded ? 0.25 : 1) : 1;
+    const targetVx = (this._moveDir || 0) * this.speed * attackFactor;
     if (this.knockbackX !== 0) {
       this.vx = this.knockbackX;
       this.knockbackX *= 0.85;
       if (Math.abs(this.knockbackX) < 10) this.knockbackX = 0;
-    } else if (this.vx < targetVx) {
-      this.vx = Math.min(targetVx, this.vx + accel * dtS);
-    } else if (this.vx > targetVx) {
-      this.vx = Math.max(targetVx, this.vx - accel * dtS);
+    } else {
+      const rate = this.grounded ? MOVE_SMOOTH_GROUND : MOVE_SMOOTH_AIR;
+      this.vx += (targetVx - this.vx) * Math.min(1, dtS * rate);
+      if (Math.abs(this.vx) < 2 && targetVx === 0) this.vx = 0;
     }
 
     // variable jump height: releasing the button early cuts the ascent short
@@ -348,6 +351,11 @@ class Enemy {
     this.attackCooldown = 0;
     this.patrolDir = 1;
     this.patrolRange = 130;
+    this.anim = Math.random() * 10;      // continuous animation clock (seconds*6)
+    this.phase = Math.random() * Math.PI * 2;
+    this.baseY = def.fly ? y - 84 : y;   // hover altitude for flying enemies
+    this.projectiles = [];
+    this.rangedCd = 1200 + Math.random() * 1200;
   }
 
   takeDamage(amount, knockbackDir, particles) {
@@ -371,50 +379,100 @@ class Enemy {
       return;
     }
     const dtS = dt / 1000;
-    this.vy = Math.min(MAX_FALL_SPEED, this.vy + GRAVITY * dtS);
+    this.anim += dtS * 6;
+    this.phase += dtS * 2;
+    const dx = player.x - this.x;
+    const dist = Math.abs(dx);
 
-    if (this.hurtTimer > 0) {
-      this.hurtTimer -= dt;
-      this.vx *= 0.9;
+    if (this.def.fly) {
+      // hover with a sine bob; drift toward the player when in range
+      const targetY = this.baseY + Math.sin(this.phase) * 26;
+      this.y += (targetY - this.y) * Math.min(1, dtS * 3);
+      if (this.hurtTimer > 0) {
+        this.hurtTimer -= dt;
+        this.vx *= 0.9;
+        this.x += this.vx * dtS;
+      } else if (dist > 70 && dist < 460) {
+        this.facing = dx > 0 ? 1 : -1;
+        this.x += this.facing * this.def.speed * dtS;
+      } else if (dist >= 460) {
+        this.x += Math.sin(this.phase * 0.5) * this.def.speed * 0.35 * dtS;
+      }
     } else {
-      const dx = player.x - this.x;
-      const dist = Math.abs(dx);
-      if (this.def.behavior === 'chase' && dist < 380 && Math.abs(player.y - this.y) < 140) {
+      this.vy = Math.min(MAX_FALL_SPEED, this.vy + GRAVITY * dtS);
+      if (this.hurtTimer > 0) {
+        this.hurtTimer -= dt;
+        this.vx *= 0.9;
+      } else if (this.def.behavior === 'chase' && dist < 380 && Math.abs(player.y - this.y) < 140) {
         this.facing = dx > 0 ? 1 : -1;
         this.vx = this.facing * this.def.speed;
       } else {
-        // patrol
         if (this.x > this.spawnX + this.patrolRange) this.patrolDir = -1;
         else if (this.x < this.spawnX - this.patrolRange) this.patrolDir = 1;
         this.facing = this.patrolDir;
         this.vx = this.patrolDir * this.def.speed * 0.6;
       }
-      if (this.attackCooldown > 0) this.attackCooldown -= dt;
-      if (dist < 46 && Math.abs(player.y - this.y) < 90 && this.attackCooldown <= 0 && !player.isInvulnerable) {
-        player.takeDamage(this.def.atk, dx > 0 ? -1 : 1, particles);
-        this.attackCooldown = 900;
-      }
+      moveAndCollide(this, this.vx * dtS, this.vy * dtS, solids);
     }
 
-    moveAndCollide(this, this.vx * dtS, this.vy * dtS, solids);
+    // contact damage
+    if (this.attackCooldown > 0) this.attackCooldown -= dt;
+    if (dist < 46 && Math.abs(player.y - this.y) < 100 && this.attackCooldown <= 0 && !player.isInvulnerable) {
+      player.takeDamage(this.def.atk, dx > 0 ? -1 : 1, particles);
+      this.attackCooldown = 900;
+    }
+
+    // ranged attack (flying ghosts, tank shells, phase-2 bosses)
+    if (this.def.ranged && this.hurtTimer <= 0) {
+      this.rangedCd -= dt;
+      const vRange = this.def.fly ? 300 : 190; // fliers lob down from above
+      if (this.rangedCd <= 0 && dist < 470 && Math.abs(player.y - this.y) < vRange) {
+        this.rangedCd = this.def.fireInterval || 2500;
+        this.facing = dx > 0 ? 1 : -1;
+        const py = this.y - this.height * 0.55;
+        const targetY = player.y - player.height * 0.5;
+        this.projectiles.push({
+          x: this.x + this.facing * this.width * 0.4, y: py,
+          vx: this.facing * (this.def.projSpeed || 280),
+          vy: this.def.fly ? (targetY - py) * 0.55 : 0,
+          life: 2400
+        });
+      }
+    }
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const p = this.projectiles[i];
+      p.x += p.vx * dtS;
+      p.y += p.vy * dtS;
+      p.life -= dt;
+      if (p.life <= 0) { this.projectiles.splice(i, 1); continue; }
+      if (!player.isInvulnerable &&
+          Math.abs(p.x - player.x) < 24 &&
+          Math.abs(p.y - (player.y - player.height / 2)) < player.height * 0.55) {
+        player.takeDamage(this.def.atk * 0.75, p.vx > 0 ? 1 : -1, particles);
+        this.projectiles.splice(i, 1);
+      }
+    }
   }
 
   draw(ctx, cameraX) {
     if (this.dead && this.deathTimer <= 0) return;
+    const x = this.x - cameraX, y = this.y;
+
+    // enemy projectiles (dark orbs / shells)
+    for (const p of this.projectiles) {
+      const px = p.x - cameraX;
+      ctx.fillStyle = this.def.projColor || '#b060ff';
+      ctx.beginPath(); ctx.arc(px, p.y, 8, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.beginPath(); ctx.arc(px - p.vx * 0.008, p.y, 4, 0, Math.PI * 2); ctx.fill();
+    }
+
     ctx.save();
     if (this.dead) ctx.globalAlpha = Math.max(0, this.deathTimer / 400);
     if (this.hurtTimer > 0) ctx.filter = 'brightness(2)';
-    const x = this.x - cameraX, y = this.y;
     ctx.translate(x, y);
     ctx.scale(this.facing, 1);
-    ctx.fillStyle = this.def.color;
-    roundRectPath(ctx, -this.width / 2, -this.height, this.width, this.height, 8);
-    ctx.fill();
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
-    roundRectPath(ctx, -this.width / 2, -this.height, this.width, this.height * 0.35, 6);
-    ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.beginPath(); ctx.arc(this.width * 0.15, -this.height * 0.78, 4, 0, Math.PI * 2); ctx.fill();
+    this._drawBody(ctx);
     ctx.restore();
 
     if (!this.dead) {
@@ -424,6 +482,112 @@ class Enemy {
       ctx.fillRect(bx, by, bw, 5);
       ctx.fillStyle = '#e74c3c';
       ctx.fillRect(bx, by, bw * Math.max(0, this.hp / this.maxHp), 5);
+    }
+  }
+
+  // animated procedural body, one distinctive look per enemy type
+  _drawBody(ctx) {
+    const w = this.width, h = this.height;
+    const c = this.def.color;
+    const walk = Math.sin(this.anim * 2.2);       // gait oscillator
+    const bob = Math.sin(this.anim * 1.4) * 2;
+
+    if (this.type === 'kunemon') {
+      // caterpillar: three squashy segments + antennae
+      const squash = 1 + Math.sin(this.anim * 3) * 0.08;
+      ctx.fillStyle = c;
+      for (let s = 0; s < 3; s++) {
+        const sx = -w * 0.3 + s * w * 0.3;
+        const r = (h * 0.42 + (s === 2 ? 3 : 0)) * squash;
+        ctx.beginPath(); ctx.ellipse(sx, -r * 0.9 + Math.sin(this.anim * 3 + s) * 2, r, r * 0.9, 0, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.strokeStyle = '#d8d840'; ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(w * 0.28, -h * 0.8); ctx.lineTo(w * 0.4, -h - 6 + bob);
+      ctx.moveTo(w * 0.34, -h * 0.78); ctx.lineTo(w * 0.5, -h - 2 + bob);
+      ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(w * 0.3, -h * 0.66, 4.5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#301848';
+      ctx.beginPath(); ctx.arc(w * 0.32, -h * 0.66, 2.4, 0, Math.PI * 2); ctx.fill();
+    } else if (this.type === 'goblimon') {
+      // goblin: waddling legs, round body, horn, swinging club
+      const step = walk * 5;
+      ctx.fillStyle = '#5a4428';
+      ctx.fillRect(-w * 0.26 + step, -h * 0.22, 9, h * 0.22);
+      ctx.fillRect(w * 0.08 - step, -h * 0.22, 9, h * 0.22);
+      ctx.fillStyle = c;
+      ctx.beginPath(); ctx.ellipse(0, -h * 0.55 + bob, w * 0.42, h * 0.4, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(w * 0.08, -h * 0.88 + bob, w * 0.26, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#e8e0d0';
+      ctx.beginPath();
+      ctx.moveTo(w * 0.02, -h * 1.05 + bob); ctx.lineTo(w * 0.1, -h * 1.28 + bob); ctx.lineTo(w * 0.18, -h * 1.02 + bob);
+      ctx.closePath(); ctx.fill();
+      // club arm swings with the gait
+      ctx.save();
+      ctx.translate(w * 0.3, -h * 0.62 + bob);
+      ctx.rotate(walk * 0.35 + 0.5);
+      ctx.fillStyle = '#7a5c34'; ctx.fillRect(-3, -4, 30, 7);
+      ctx.fillStyle = '#8a6a3a';
+      ctx.beginPath(); ctx.arc(30, 0, 9, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      ctx.fillStyle = '#ffd23f';
+      ctx.beginPath(); ctx.arc(w * 0.16, -h * 0.9 + bob, 4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#301810';
+      ctx.beginPath(); ctx.arc(w * 0.18, -h * 0.9 + bob, 2, 0, Math.PI * 2); ctx.fill();
+    } else if (this.type === 'bakemon') {
+      // ghost: floating sheet with a wavy hem, hollow eyes, open mouth
+      const hem = this.anim * 4;
+      ctx.fillStyle = c;
+      ctx.beginPath();
+      ctx.arc(0, -h * 0.62, w * 0.46, Math.PI, 0);
+      const hemY = -h * 0.18;
+      ctx.lineTo(w * 0.46, hemY);
+      for (let i = 3; i >= -3; i--) {
+        const hx = (i / 3) * w * 0.46;
+        ctx.quadraticCurveTo(hx + w * 0.07, hemY + 10 + Math.sin(hem + i) * 5, hx, hemY + 4 + Math.sin(hem + i * 2) * 4);
+      }
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#241a30';
+      ctx.beginPath(); ctx.ellipse(w * 0.12, -h * 0.72, 6, 9, 0.2, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(-w * 0.14, -h * 0.72, 6, 9, -0.2, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(0, -h * 0.45, 10, 7 + Math.sin(this.anim * 3) * 3, 0, 0, Math.PI * 2); ctx.fill();
+    } else if (this.type === 'tankmon') {
+      // tank: animated treads, hull, dome, cannon
+      ctx.fillStyle = '#3a4250';
+      roundRectPath(ctx, -w * 0.5, -h * 0.3, w, h * 0.3, 8); ctx.fill();
+      ctx.fillStyle = '#20262e';
+      const treadOff = (this.anim * 30) % 14;
+      for (let tx = -w * 0.5 + 4 - treadOff; tx < w * 0.5; tx += 14) {
+        if (tx > -w * 0.5) ctx.fillRect(tx, -h * 0.26, 5, h * 0.2);
+      }
+      ctx.fillStyle = c;
+      roundRectPath(ctx, -w * 0.42, -h * 0.68, w * 0.84, h * 0.42, 6); ctx.fill();
+      ctx.beginPath(); ctx.arc(0, -h * 0.72, w * 0.24, Math.PI, 0); ctx.fill();
+      ctx.fillStyle = '#2a3038';
+      ctx.fillRect(w * 0.2, -h * 0.62 + Math.sin(this.anim) * 1.5, w * 0.42, 8);
+      ctx.fillStyle = '#ff5040';
+      ctx.beginPath(); ctx.arc(w * 0.06, -h * 0.76, 4, 0, Math.PI * 2); ctx.fill();
+    } else {
+      // bosses / fallback: hulking silhouette with horns and glowing eyes
+      const breathe = 1 + Math.sin(this.anim) * 0.03;
+      ctx.fillStyle = c;
+      roundRectPath(ctx, -w / 2, -h * breathe, w, h * breathe, 10); ctx.fill();
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      roundRectPath(ctx, -w / 2, -h * breathe, w, h * 0.34, 8); ctx.fill();
+      ctx.fillStyle = c;
+      ctx.beginPath();
+      ctx.moveTo(-w * 0.34, -h * breathe); ctx.lineTo(-w * 0.44, -h * breathe - 20); ctx.lineTo(-w * 0.2, -h * breathe + 2);
+      ctx.moveTo(w * 0.34, -h * breathe); ctx.lineTo(w * 0.44, -h * breathe - 20); ctx.lineTo(w * 0.2, -h * breathe + 2);
+      ctx.closePath(); ctx.fill();
+      const glow = 0.7 + Math.sin(this.anim * 2.5) * 0.3;
+      ctx.fillStyle = `rgba(255,60,60,${glow})`;
+      ctx.beginPath(); ctx.arc(w * 0.14, -h * 0.8, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(-w * 0.1, -h * 0.8, 5, 0, Math.PI * 2); ctx.fill();
+      const step = walk * 4;
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.fillRect(-w * 0.3 + step, -h * 0.16, w * 0.2, h * 0.16);
+      ctx.fillRect(w * 0.1 - step, -h * 0.16, w * 0.2, h * 0.16);
     }
   }
 }
@@ -445,56 +609,21 @@ class Boss extends Enemy {
   constructor(type, x, y) {
     super(type, x, y, BOSS_DEFS);
     const def = BOSS_DEFS[type];
-    this.def = { ...def, behavior: 'chase' };
+    this.def = { ...def, behavior: 'chase', projColor: '#ff5030', projSpeed: 300, fireInterval: 1800 };
     this.hp = def.hp; this.maxHp = def.hp;
-    this.phase = 1;
-    this.projectiles = [];
-    this.rangedCooldown = 2000;
+    this.bossPhase = 1;   // battle phase (Enemy.phase is the animation oscillator)
     this.isBoss = true;
     this.roared = false;
   }
 
   update(dt, solids, player, particles) {
     if (!this.roared) { this.roared = true; AudioSys.sfx('bossRoar'); }
-    if (this.hp / this.maxHp <= 0.5 && this.phase === 1) {
-      this.phase = 2;
-      this.def = { ...this.def, speed: this.def.speed * 1.3 };
+    if (this.hp / this.maxHp <= 0.5 && this.bossPhase === 1) {
+      // fury: faster and starts firing (Enemy.update handles the ranged loop)
+      this.bossPhase = 2;
+      this.def = { ...this.def, speed: this.def.speed * 1.3, ranged: true };
       AudioSys.sfx('bossRoar');
     }
     super.update(dt, solids, player, particles);
-
-    if (this.phase === 2 && !this.dead) {
-      this.rangedCooldown -= dt;
-      if (this.rangedCooldown <= 0) {
-        this.rangedCooldown = 1800;
-        const dir = player.x > this.x ? 1 : -1;
-        this.projectiles.push({ x: this.x, y: this.y - this.height * 0.6, vx: dir * 260, vy: -60, life: 2200 });
-      }
-    }
-    for (let i = this.projectiles.length - 1; i >= 0; i--) {
-      const p = this.projectiles[i];
-      p.vy += GRAVITY * 0.3 * dt / 1000;
-      p.x += p.vx * dt / 1000;
-      p.y += p.vy * dt / 1000;
-      p.life -= dt;
-      if (p.life <= 0) { this.projectiles.splice(i, 1); continue; }
-      if (!player.isInvulnerable) {
-        const dx = Math.abs(p.x - player.x), dy = Math.abs(p.y - (player.y - player.height / 2));
-        if (dx < 26 && dy < 40) {
-          player.takeDamage(this.def.atk * 0.7, p.vx > 0 ? 1 : -1, particles);
-          this.projectiles.splice(i, 1);
-        }
-      }
-    }
-  }
-
-  draw(ctx, cameraX) {
-    super.draw(ctx, cameraX);
-    for (const p of this.projectiles) {
-      ctx.fillStyle = '#ff5030';
-      ctx.beginPath();
-      ctx.arc(p.x - cameraX, p.y, 9, 0, Math.PI * 2);
-      ctx.fill();
-    }
   }
 }
