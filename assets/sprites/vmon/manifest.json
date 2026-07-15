@@ -40,9 +40,11 @@
     "band4_f0.png",
     "band4_f1.png",
     "band4_f2.png",
-    "band4_f3.png",
-    "band4_f4.png",
-    "band4_f5.png",
-    "band4_f6.png"
-  ]
+    "band4_f3.png"
+  ],
+  "specialProj": [
+    "band4_beam0.png",
+    "band4_beam1.png"
+  ],
+  "specialImpact": []
 }

@@ -15,7 +15,7 @@
 
 const SPRITE_CHARACTERS = ['agumon', 'greymon', 'vmon', 'vdramon', 'guilmon', 'growlmon'];
 const HUD_PARTS = ['hud_status', 'hud_minimap', 'hud_digivice'];
-const ANIM_STATES = ['idle', 'walk', 'jump', 'fall', 'attack1', 'attack2', 'special'];
+const ANIM_STATES = ['idle', 'walk', 'jump', 'fall', 'attack1', 'attack2', 'special', 'specialProj', 'specialImpact'];
 
 const Assets = {
   sprites: {},  // charId -> { idle:[Image,...], walk:[...], ... }
@@ -36,6 +36,13 @@ const Assets = {
     const c = this.sprites[charId];
     if (!c) return null;
     return c[state] || c.idle || null;
+  },
+
+  // no idle fallback — projectile/impact states must not draw the character
+  getFramesStrict(charId, state) {
+    const c = this.sprites[charId];
+    if (!c || !c[state] || !c[state].length) return null;
+    return c[state];
   },
 
   getHud(part) { return this.hud[part] || null; },

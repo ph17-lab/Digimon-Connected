@@ -12,6 +12,20 @@ const APP_STATE = {
   PLAYING: 'playing', PAUSED: 'paused', GAME_OVER: 'game_over', VICTORY: 'victory'
 };
 
+// deterministic pseudo-random in [0,1) — scenery decoration stays put frame to frame
+function hash01(n) {
+  const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+// per-theme background art configuration (parallax silhouettes + accents)
+const THEME_BG = {
+  forest:  { far: '#33633f', near: '#224730', style: 'trees',     top: '#57a844', cloud: 'rgba(255,255,255,0.5)' },
+  city:    { far: '#28305a', near: '#181f40', style: 'buildings', top: '#5fd3ff', cloud: 'rgba(170,190,230,0.28)' },
+  volcano: { far: '#5c2a1c', near: '#3a1810', style: 'peaks',     top: '#ff7a30', cloud: 'rgba(60,30,25,0.55)' },
+  castle:  { far: '#332650', near: '#201736', style: 'towers',    top: '#8a6ad8', cloud: 'rgba(90,70,130,0.35)' }
+};
+
 const Game = {
   canvas: null, ctx: null,
   appState: APP_STATE.BOOT,
@@ -20,6 +34,7 @@ const Game = {
   levelIndex: 0,
   enemies: [],
   boss: null,
+  projectiles: [],   // player special-attack projectiles
   particles: new ParticleSystem(),
   shake: new ScreenShake(),
   cameraX: 0,
@@ -106,6 +121,7 @@ const Game = {
     this.secretUnlockedThisLevel = this.player.unlockedSecrets.has(`${level.id}:secret`);
     this.doorOpen = false;
     this.levelComplete = false;
+    this.projectiles = [];
     this.particles.clear();
     UI.clearToast();
     this.cameraX = Math.max(0, Math.min(cp.x - this.canvas.width / 2, level.width - this.canvas.width));
@@ -150,6 +166,13 @@ const Game = {
     for (const en of this.enemies) en.update(dt, solids, this.player, this.particles);
     if (this.boss) this.boss.update(dt, solids, this.player, this.particles);
 
+    // launch any special projectile the player queued this frame
+    if (this.player.pendingProjectile) {
+      this._spawnProjectile(this.player.pendingProjectile);
+      this.player.pendingProjectile = null;
+    }
+    this._updateProjectiles(dt);
+
     this._resolvePlayerAttacks();
     this._resolveHazards();
     this._resolvePickups();
@@ -173,6 +196,16 @@ const Game = {
     if (this.lastAutosave > 20000) { this.lastAutosave = 0; this._autosave(); }
   },
 
+  _hitEnemy(en, dmg, knockDir) {
+    en.takeDamage(dmg, knockDir, this.particles);
+    this.shake.trigger(4, 100);
+    if (en.dead) {
+      this.player.gainExp(en.def.expReward);
+      this.player.gainDigiSoul(en.def.soulReward || 10);
+      if (en.isBoss) this.player.defeatedBosses.add(this.level.id);
+    }
+  },
+
   _resolvePlayerAttacks() {
     const box = this.player.getAttackHitbox();
     if (!box) return;
@@ -181,14 +214,104 @@ const Game = {
     for (const en of targets) {
       if (en.dead || this.player.attackHitEnemies.has(en)) continue;
       if (rectsOverlap(box, getAABB(en))) {
-        en.takeDamage(dmg, this.player.facing, this.particles);
         this.player.attackHitEnemies.add(en);
-        this.shake.trigger(4, 100);
-        if (en.dead) {
-          this.player.gainExp(en.def.expReward);
-          this.player.gainDigiSoul(en.def.soulReward || 10);
-          if (en.isBoss) this.player.defeatedBosses.add(this.level.id);
+        this._hitEnemy(en, dmg, this.player.facing);
+      }
+    }
+  },
+
+  // ------------------------------------------------- special projectiles
+  _spawnProjectile(spec) {
+    this.projectiles.push({
+      ...spec,
+      age: 0, frameTimer: 0, frameIndex: 0,
+      state: 'fly', impactTimer: 0
+    });
+  },
+
+  _updateProjectiles(dt) {
+    const dtS = dt / 1000;
+    const targets = this.boss ? [...this.enemies, this.boss] : this.enemies;
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const p = this.projectiles[i];
+      if (p.state === 'impact') {
+        p.impactTimer += dt;
+        if (p.impactTimer > 280) this.projectiles.splice(i, 1);
+        continue;
+      }
+      p.age += dt;
+      p.frameTimer += dt;
+      p.x += p.vx * dtS;
+      const frames = Assets.getFramesStrict(p.charId, 'specialProj');
+      if (frames && frames.length && p.frameTimer > 90) {
+        p.frameTimer = 0;
+        p.frameIndex = (p.frameIndex + 1) % frames.length;
+      }
+      const img = frames && frames.length ? frames[p.frameIndex] : null;
+      // collision box tighter than the drawn sprite — the glow shouldn't hit
+      const ph = (img ? img.height : 50) * 0.60 * (p.scale || 1);
+      const pw = (img ? img.width : 50) * 0.70 * (p.scale || 1);
+      const box = { x: p.x - pw / 2, y: p.y - ph / 2, w: pw, h: ph };
+
+      let hit = false;
+      for (const en of targets) {
+        if (en.dead) continue;
+        if (rectsOverlap(box, getAABB(en))) {
+          this._hitEnemy(en, p.damage, p.vx > 0 ? 1 : -1);
+          hit = true;
+          break;
         }
+      }
+      if (!hit) {
+        for (const r of this.level.platforms) {
+          if (rectsOverlap(box, r)) { hit = true; break; }
+        }
+      }
+      const gone = p.age > p.life || p.x < this.cameraX - 250 || p.x > this.level.width + 250;
+      if (hit) {
+        this._explodeProjectile(p);
+      } else if (gone) {
+        this.projectiles.splice(i, 1);
+      }
+    }
+  },
+
+  _explodeProjectile(p) {
+    const impactFrames = Assets.getFramesStrict(p.charId, 'specialImpact');
+    if (impactFrames && impactFrames.length) {
+      p.state = 'impact';
+      p.impactTimer = 0;
+      p.frameIndex = 0;
+    } else {
+      this.particles.burst(p.x, p.y, CHARACTERS[p.charId].color, 14, { speed: 220, life: 420 });
+      this.projectiles.splice(this.projectiles.indexOf(p), 1);
+    }
+    AudioSys.sfx('hit');
+  },
+
+  _drawProjectiles(ctx) {
+    for (const p of this.projectiles) {
+      const stateKey = p.state === 'impact' ? 'specialImpact' : 'specialProj';
+      const frames = Assets.getFramesStrict(p.charId, stateKey);
+      const x = p.x - this.cameraX;
+      if (x < -300 || x > this.canvas.width + 300) continue;
+      if (frames && frames.length) {
+        const idx = p.state === 'impact'
+          ? Math.min(frames.length - 1, Math.floor(p.impactTimer / 140))
+          : p.frameIndex;
+        const img = frames[idx];
+        const s = 0.85 * (p.scale || 1);
+        const w = img.width * s, h = img.height * s;
+        ctx.save();
+        ctx.translate(x, p.y);
+        if (p.vx < 0) ctx.scale(-1, 1);
+        ctx.drawImage(img, -w / 2, -h / 2, w, h);
+        ctx.restore();
+      } else {
+        ctx.fillStyle = CHARACTERS[p.charId].color;
+        ctx.beginPath();
+        ctx.arc(x, p.y, 12 * (p.scale || 1), 0, Math.PI * 2);
+        ctx.fill();
       }
     }
   },
@@ -346,6 +469,7 @@ const Game = {
     for (const en of this.enemies) en.draw(ctx, this.cameraX);
     if (this.boss) this.boss.draw(ctx, this.cameraX);
     this.player.draw(ctx, this.cameraX);
+    this._drawProjectiles(ctx);
     this.particles.draw(ctx, this.cameraX);
 
     if (this.boss && !this.boss.dead) this._drawBossBar(ctx, w);
@@ -361,26 +485,198 @@ const Game = {
     g.addColorStop(1, this.level.sky[1]);
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, w, h);
-    // simple parallax silhouettes
-    ctx.fillStyle = 'rgba(0,0,0,0.12)';
+
+    const theme = this.level.ambient;
+    this._drawCelestial(ctx, w, theme);
+    this._drawClouds(ctx, w, theme);
+    this._drawSilhouettes(ctx, w, h, theme, 0.18, true);   // far layer
+    this._drawSilhouettes(ctx, w, h, theme, 0.38, false);  // near layer
+  },
+
+  _drawCelestial(ctx, w, theme) {
+    if (theme === 'forest') {
+      ctx.fillStyle = 'rgba(255,244,190,0.9)';
+      ctx.beginPath(); ctx.arc(w - 120, 84, 42, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,244,190,0.25)';
+      ctx.beginPath(); ctx.arc(w - 120, 84, 62, 0, Math.PI * 2); ctx.fill();
+    } else if (theme === 'volcano') {
+      ctx.fillStyle = 'rgba(255,110,40,0.55)';
+      ctx.beginPath(); ctx.arc(w - 150, 120, 52, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,60,20,0.18)';
+      ctx.beginPath(); ctx.arc(w - 150, 120, 84, 0, Math.PI * 2); ctx.fill();
+    } else {
+      // night themes: stars + moon
+      for (let i = 0; i < 42; i++) {
+        const sx = hash01(i * 3 + 1) * w;
+        const sy = hash01(i * 7 + 2) * 220;
+        ctx.fillStyle = `rgba(255,255,255,${0.25 + hash01(i) * 0.5})`;
+        ctx.fillRect(sx, sy, 2, 2);
+      }
+      ctx.fillStyle = '#e8ecf8';
+      ctx.beginPath(); ctx.arc(w - 130, 90, 34, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = this.level.sky[0];
+      ctx.beginPath(); ctx.arc(w - 118, 80, 30, 0, Math.PI * 2); ctx.fill();
+    }
+  },
+
+  _drawClouds(ctx, w, theme) {
+    const cfg = THEME_BG[theme] || THEME_BG.forest;
+    ctx.fillStyle = cfg.cloud;
+    const span = w + 560;
     for (let i = 0; i < 6; i++) {
-      const bx = (i * 400 - this.cameraX * 0.3) % (w + 400) - 200;
+      let cx = (i * 430 + hash01(i + 21) * 320 - this.cameraX * 0.12) % span;
+      if (cx < 0) cx += span;
+      cx -= 280;
+      const cy = 46 + hash01(i + 40) * 120;
+      const r = 26 + hash01(i + 60) * 26;
       ctx.beginPath();
-      ctx.ellipse(bx, h * 0.75, 220, 90, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx, cy, r * 2.1, r * 0.75, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx - r, cy + 6, r * 1.3, r * 0.55, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx + r * 1.1, cy + 5, r * 1.2, r * 0.5, 0, 0, Math.PI * 2);
       ctx.fill();
     }
   },
 
+  _drawSilhouettes(ctx, w, h, theme, par, far) {
+    const cfg = THEME_BG[theme] || THEME_BG.forest;
+    ctx.fillStyle = far ? cfg.far : cfg.near;
+    const baseY = far ? h * 0.68 : h * 0.78;
+    const off = this.cameraX * par;
+    const style = cfg.style;
+
+    if (style === 'trees') {
+      const step = 96;
+      const first = Math.floor(off / step) - 2;
+      for (let i = first; i * step - off < w + step; i++) {
+        const sx = i * step - off;
+        const r = (far ? 46 : 62) + hash01(i * 13) * 42;
+        ctx.beginPath(); ctx.arc(sx, baseY - r * 0.55, r, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.fillRect(0, baseY, w, h - baseY);
+    } else if (style === 'buildings') {
+      const step = 88;
+      const first = Math.floor(off / step) - 2;
+      for (let i = first; i * step - off < w + step; i++) {
+        const sx = i * step - off;
+        const bw = 54 + hash01(i * 17) * 46;
+        const bh = (far ? 70 : 110) + hash01(i * 29) * 150;
+        ctx.fillRect(sx, baseY - bh, bw, bh + (h - baseY));
+        if (!far) {
+          // lit windows
+          for (let wy = 0; wy < 5; wy++) {
+            for (let wx = 0; wx < 3; wx++) {
+              if (hash01(i * 97 + wy * 11 + wx * 5) > 0.55) {
+                ctx.fillStyle = 'rgba(255,222,120,0.75)';
+                ctx.fillRect(sx + 8 + wx * 14, baseY - bh + 12 + wy * 20, 5, 7);
+              }
+            }
+          }
+          ctx.fillStyle = THEME_BG[theme].near;
+        }
+      }
+      ctx.fillRect(0, baseY, w, h - baseY);
+    } else if (style === 'peaks') {
+      const step = 150;
+      const first = Math.floor(off / step) - 2;
+      ctx.beginPath();
+      ctx.moveTo(-50, h);
+      for (let i = first; i * step - off < w + step * 2; i++) {
+        const sx = i * step - off;
+        const ph = (far ? 70 : 120) + hash01(i * 31) * 130;
+        ctx.lineTo(sx, baseY - ph);
+        ctx.lineTo(sx + step * 0.5, baseY - ph * (0.35 + hash01(i * 7) * 0.3));
+      }
+      ctx.lineTo(w + 50, h);
+      ctx.closePath(); ctx.fill();
+      if (!far) {
+        // ember glow along the ridge line
+        ctx.fillStyle = 'rgba(255,90,30,0.16)';
+        ctx.fillRect(0, baseY - 40, w, 40);
+        ctx.fillStyle = cfg.near;
+      }
+    } else { // towers
+      const step = 170;
+      const first = Math.floor(off / step) - 2;
+      for (let i = first; i * step - off < w + step; i++) {
+        const sx = i * step - off;
+        const tw = 44 + hash01(i * 11) * 22;
+        const th = (far ? 90 : 140) + hash01(i * 23) * 120;
+        ctx.fillRect(sx, baseY - th, tw, th + (h - baseY));
+        // battlements + spire
+        for (let b = 0; b < 4; b++) ctx.fillRect(sx + b * (tw / 3.6), baseY - th - 10, tw / 6, 10);
+        ctx.beginPath();
+        ctx.moveTo(sx + tw * 0.5 - 14, baseY - th);
+        ctx.lineTo(sx + tw * 0.5, baseY - th - 42);
+        ctx.lineTo(sx + tw * 0.5 + 14, baseY - th);
+        ctx.closePath(); ctx.fill();
+        if (!far && hash01(i * 41) > 0.4) {
+          ctx.fillStyle = 'rgba(255,190,90,0.8)';
+          ctx.fillRect(sx + tw * 0.5 - 3, baseY - th + 26, 6, 10);
+          ctx.fillStyle = cfg.near;
+        }
+      }
+      ctx.fillRect(0, baseY, w, h - baseY);
+    }
+  },
+
   _drawGround(ctx, w, h) {
+    const theme = this.level.ambient;
+    const cfg = THEME_BG[theme] || THEME_BG.forest;
     for (const p of this.level.platforms) {
       const x = p.x - this.cameraX;
       if (x + p.w < 0 || x > w) continue;
+
+      // body
       ctx.fillStyle = this.level.groundEdge;
       ctx.fillRect(x, p.y, p.w, p.h);
+      // body texture speckles (deterministic per world position)
+      ctx.fillStyle = 'rgba(255,255,255,0.06)';
+      for (let gx = Math.floor(p.x / 34) * 34; gx < p.x + p.w - 8; gx += 34) {
+        for (let gy = Math.floor(p.y / 26) * 26 + 14; gy < p.y + p.h - 6; gy += 26) {
+          if (hash01(gx * 7 + gy * 13) > 0.5) ctx.fillRect(gx - this.cameraX, gy, 6, 4);
+        }
+      }
+      // side shading
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.fillRect(x, p.y, 4, p.h);
+      ctx.fillRect(x + p.w - 4, p.y, 4, p.h);
+
+      // top surface strip + themed accent line
       ctx.fillStyle = this.level.groundColor;
-      ctx.fillRect(x, p.y, p.w, Math.min(10, p.h));
-      ctx.fillStyle = this.level.groundColor;
-      ctx.fillRect(x, p.y + 6, p.w, p.h - 6);
+      ctx.fillRect(x, p.y, p.w, 10);
+      ctx.fillStyle = 'rgba(255,255,255,0.22)';
+      ctx.fillRect(x, p.y, p.w, 2);
+      ctx.fillStyle = cfg.top;
+      ctx.globalAlpha = 0.5;
+      ctx.fillRect(x, p.y + 2, p.w, 2);
+      ctx.globalAlpha = 1;
+
+      // top decoration every ~64px: grass tufts / neon studs / embers / runes
+      for (let gx = Math.ceil(p.x / 64) * 64; gx < p.x + p.w - 8; gx += 64) {
+        const dx = gx - this.cameraX;
+        const v = hash01(gx * 3 + p.y);
+        if (v < 0.3) continue;
+        if (theme === 'forest') {
+          ctx.strokeStyle = cfg.top; ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(dx, p.y); ctx.lineTo(dx - 3, p.y - 7);
+          ctx.moveTo(dx + 4, p.y); ctx.lineTo(dx + 4, p.y - 9);
+          ctx.moveTo(dx + 8, p.y); ctx.lineTo(dx + 11, p.y - 6);
+          ctx.stroke();
+        } else if (theme === 'city') {
+          ctx.fillStyle = cfg.top;
+          ctx.fillRect(dx, p.y - 3, 8, 3);
+        } else if (theme === 'volcano') {
+          const glow = 0.4 + Math.sin(performance.now() / 350 + gx) * 0.25;
+          ctx.fillStyle = `rgba(255,120,40,${glow})`;
+          ctx.fillRect(dx, p.y - 2, 10, 2);
+        } else {
+          ctx.fillStyle = cfg.top;
+          ctx.globalAlpha = 0.7;
+          ctx.fillRect(dx, p.y - 4, 3, 4); ctx.fillRect(dx + 6, p.y - 6, 3, 6);
+          ctx.globalAlpha = 1;
+        }
+      }
     }
   },
 

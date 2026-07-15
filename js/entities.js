@@ -180,7 +180,8 @@ class Player {
       if (this.sp < def.specialCost) return false;
       this.sp -= def.specialCost;
       this.attackState = 'special';
-      this.attackDuration = 480;
+      this.attackDuration = 560;
+      this._specialFired = false;
     } else {
       this.attackState = 'attack1';
       this.attackDuration = 300;
@@ -194,9 +195,10 @@ class Player {
 
   getAttackHitbox() {
     if (!this.attackState) return null;
+    if (this.attackState === 'special') return null; // damage comes from the projectile
     const progress = this.attackTimer / this.attackDuration;
     if (progress < 0.25 || progress > 0.95) return null; // startup/recovery: no hitbox
-    const range = this.attackState === 'special' ? 110 : (this.attackState === 'attack2' ? 70 : 58);
+    const range = this.attackState === 'attack2' ? 70 : 58;
     const h = this.height * 0.75;
     const w = range * this.scale;
     const x = this.facing === 1 ? this.x : this.x - w;
@@ -272,6 +274,23 @@ class Player {
 
     if (this.attackState) {
       this.attackTimer += dt;
+      // launch the special's projectile once the cast animation reaches the
+      // release pose (~60% in) — game.js drains pendingProjectile each frame
+      if (this.attackState === 'special' && !this._specialFired &&
+          this.attackTimer >= this.attackDuration * 0.6) {
+        this._specialFired = true;
+        const def = CHARACTERS[this.charId];
+        this.pendingProjectile = {
+          charId: this.charId,
+          x: this.x + this.facing * (this.width * 0.5 + 20),
+          y: this.y - this.height * 0.45, // chest height: clears platforms above, still hits short enemies
+
+          vx: this.facing * (def.projSpeed || 520),
+          life: def.projLife || 1500,
+          damage: def.specialDamage || CHARACTERS[this.rookieId].specialDamage,
+          scale: this.scale
+        };
+      }
       if (this.attackTimer >= this.attackDuration) {
         if (this.attackState === 'attack1' && this.queuedCombo) {
           this.queuedCombo = false;

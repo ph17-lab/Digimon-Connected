@@ -7,7 +7,7 @@
 'use strict';
 
 const STATE_FRAME_MS = {
-  idle: 220, walk: 90, jump: 90, fall: 120,
+  idle: 200, walk: 72, jump: 90, fall: 120,
   attack1: 55, attack2: 55, special: 70
 };
 const LOOPING_STATES = new Set(['idle', 'walk']);

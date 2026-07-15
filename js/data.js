@@ -18,6 +18,7 @@ const CHARACTERS = {
     color: '#ff8c2e', accent: '#3a6b2e',
     baseHp: 100, baseSp: 50, baseAtk: 12, baseSpeed: 220, jumpForce: 830,
     specialName: 'Baby Flame', specialCost: 20, specialDamage: 26,
+    projSpeed: 520, projLife: 1500,
     portraitBg: '#5c2c0c'
   },
   greymon: {
@@ -25,34 +26,39 @@ const CHARACTERS = {
     color: '#e8792a', accent: '#8a4a12',
     scale: 1.35, atkMult: 2.1, hpMult: 1.6, speedMult: 0.92,
     specialName: 'Nova Blast', specialDamage: 55,
+    projSpeed: 500, projLife: 1600,
     portraitBg: '#5c2c0c'
   },
   vmon: {
     id: 'vmon', name: 'V-mon', evolvesTo: 'vdramon',
     color: '#2e6bff', accent: '#e8e030',
     baseHp: 90, baseSp: 55, baseAtk: 11, baseSpeed: 250, jumpForce: 870,
-    specialName: 'V-Headbutt', specialCost: 18, specialDamage: 24,
+    specialName: 'V-Laser', specialCost: 18, specialDamage: 24,
+    projSpeed: 640, projLife: 1300,
     portraitBg: '#0c2c5c'
   },
   vdramon: {
     id: 'vdramon', name: 'V-dramon', rookieOf: 'vmon',
     color: '#1c4fd6', accent: '#f0e850',
     scale: 1.32, atkMult: 2.0, hpMult: 1.55, speedMult: 0.95,
-    specialName: 'V-Wing Blade', specialDamage: 52,
+    specialName: 'Plasma Arrow', specialDamage: 52,
+    projSpeed: 620, projLife: 1400,
     portraitBg: '#0c2c5c'
   },
   guilmon: {
     id: 'guilmon', name: 'Guilmon', evolvesTo: 'growlmon',
     color: '#d8322a', accent: '#1a1a1a',
     baseHp: 105, baseSp: 48, baseAtk: 13, baseSpeed: 210, jumpForce: 810,
-    specialName: 'Rock Breaker', specialCost: 22, specialDamage: 28,
+    specialName: 'Fireball', specialCost: 22, specialDamage: 28,
+    projSpeed: 520, projLife: 1500,
     portraitBg: '#3c0c0c'
   },
   growlmon: {
     id: 'growlmon', name: 'Growlmon', rookieOf: 'guilmon',
     color: '#b81a1a', accent: '#141414',
     scale: 1.38, atkMult: 2.15, hpMult: 1.65, speedMult: 0.9,
-    specialName: 'Pyro Grenade', specialDamage: 58,
+    specialName: 'Fire Bite', specialDamage: 58,
+    projSpeed: 340, projLife: 520,  // short flaming lunge, not a long-range shot
     portraitBg: '#3c0c0c'
   }
 };
