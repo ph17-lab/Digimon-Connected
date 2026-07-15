@@ -196,14 +196,17 @@ const UI = {
 
   _drawCharPreview(canvas, charId) {
     const ctx = canvas.getContext('2d');
-    const anim = getSpriteAnimator(charId);
-    let raf;
+    // own animator instance — never the gameplay one, whose frame timer a
+    // background preview loop would keep resetting
+    const anim = new DigimonSprite(charId);
+    anim.setState('idle');
     const draw = () => {
+      // stop when removed from the DOM or the owning screen/panel is hidden
+      if (!document.body.contains(canvas) || canvas.offsetParent === null) return;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      anim.setState('idle');
       anim.update(16);
       anim.draw(ctx, canvas.width / 2, canvas.height - 6, 1, 0.85);
-      if (document.body.contains(canvas)) raf = requestAnimationFrame(draw);
+      requestAnimationFrame(draw);
     };
     draw();
   },
@@ -287,11 +290,11 @@ const UI = {
     this._closeAllPanels();
     const panel = document.getElementById(`panel-${key}`);
     if (!panel) return;
+    panel.classList.remove('hidden'); // unhide first: preview loops stop while hidden
     if (key === 'evolution') this._renderEvolutionPanel();
     if (key === 'backpack') this._renderBackpackPanel();
     if (key === 'save') this._renderSavePanel();
     if (key === 'map') this._renderMapPanel();
-    panel.classList.remove('hidden');
   },
 
   _closeAllPanels() {

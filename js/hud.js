@@ -100,12 +100,10 @@ const HUD = {
     const def = CHARACTERS[state.charId];
     ctx.fillStyle = def.portraitBg || '#111';
     ctx.fillRect(px, py, p.w, p.h);
-    const anim = getSpriteAnimator(state.charId);
-    const savedState = anim.state, savedFrame = anim.frameIndex;
+    const anim = getUiAnimator(state.charId);
     anim.setState('idle');
-    anim.frameIndex = 0;
+    anim.update(16); // HUD draws once per game frame, so ~16ms per tick
     anim.draw(ctx, px + p.w / 2, py + p.h - 4, 1, 0.72);
-    anim.state = savedState; anim.frameIndex = savedFrame;
     ctx.restore();
 
     // HP / SP bars

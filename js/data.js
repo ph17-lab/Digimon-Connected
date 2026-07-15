@@ -16,7 +16,7 @@ const CHARACTERS = {
   agumon: {
     id: 'agumon', name: 'Agumon', evolvesTo: 'greymon',
     color: '#ff8c2e', accent: '#3a6b2e',
-    baseHp: 100, baseSp: 50, baseAtk: 12, baseSpeed: 220, jumpForce: 620,
+    baseHp: 100, baseSp: 50, baseAtk: 12, baseSpeed: 220, jumpForce: 830,
     specialName: 'Baby Flame', specialCost: 20, specialDamage: 26,
     portraitBg: '#5c2c0c'
   },
@@ -30,7 +30,7 @@ const CHARACTERS = {
   vmon: {
     id: 'vmon', name: 'V-mon', evolvesTo: 'vdramon',
     color: '#2e6bff', accent: '#e8e030',
-    baseHp: 90, baseSp: 55, baseAtk: 11, baseSpeed: 250, jumpForce: 660,
+    baseHp: 90, baseSp: 55, baseAtk: 11, baseSpeed: 250, jumpForce: 870,
     specialName: 'V-Headbutt', specialCost: 18, specialDamage: 24,
     portraitBg: '#0c2c5c'
   },
@@ -44,7 +44,7 @@ const CHARACTERS = {
   guilmon: {
     id: 'guilmon', name: 'Guilmon', evolvesTo: 'growlmon',
     color: '#d8322a', accent: '#1a1a1a',
-    baseHp: 105, baseSp: 48, baseAtk: 13, baseSpeed: 210, jumpForce: 600,
+    baseHp: 105, baseSp: 48, baseAtk: 13, baseSpeed: 210, jumpForce: 810,
     specialName: 'Rock Breaker', specialCost: 22, specialDamage: 28,
     portraitBg: '#3c0c0c'
   },

@@ -97,8 +97,16 @@ function drawProceduralDigimon(ctx, charId, state, x, groundY, facing, scale, fr
   ctx.fill();
 }
 
-const SpriteCache = { instances: {} };
+// Two separate caches: the gameplay animator is owned by the entity that
+// plays it, while UI surfaces (HUD portrait, menus) get their own instances —
+// sharing one animator would reset its frame timer every time the UI draws,
+// freezing the in-game animation on a single frame.
+const SpriteCache = { instances: {}, ui: {} };
 function getSpriteAnimator(charId) {
   if (!SpriteCache.instances[charId]) SpriteCache.instances[charId] = new DigimonSprite(charId);
   return SpriteCache.instances[charId];
+}
+function getUiAnimator(charId) {
+  if (!SpriteCache.ui[charId]) SpriteCache.ui[charId] = new DigimonSprite(charId);
+  return SpriteCache.ui[charId];
 }

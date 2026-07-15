@@ -396,7 +396,7 @@ const CHARACTERS = {
   agumon: {
     id: 'agumon', name: 'Agumon', evolvesTo: 'greymon',
     color: '#ff8c2e', accent: '#3a6b2e',
-    baseHp: 100, baseSp: 50, baseAtk: 12, baseSpeed: 220, jumpForce: 620,
+    baseHp: 100, baseSp: 50, baseAtk: 12, baseSpeed: 220, jumpForce: 830,
     specialName: 'Baby Flame', specialCost: 20, specialDamage: 26,
     portraitBg: '#5c2c0c'
   },
@@ -410,7 +410,7 @@ const CHARACTERS = {
   vmon: {
     id: 'vmon', name: 'V-mon', evolvesTo: 'vdramon',
     color: '#2e6bff', accent: '#e8e030',
-    baseHp: 90, baseSp: 55, baseAtk: 11, baseSpeed: 250, jumpForce: 660,
+    baseHp: 90, baseSp: 55, baseAtk: 11, baseSpeed: 250, jumpForce: 870,
     specialName: 'V-Headbutt', specialCost: 18, specialDamage: 24,
     portraitBg: '#0c2c5c'
   },
@@ -424,7 +424,7 @@ const CHARACTERS = {
   guilmon: {
     id: 'guilmon', name: 'Guilmon', evolvesTo: 'growlmon',
     color: '#d8322a', accent: '#1a1a1a',
-    baseHp: 105, baseSp: 48, baseAtk: 13, baseSpeed: 210, jumpForce: 600,
+    baseHp: 105, baseSp: 48, baseAtk: 13, baseSpeed: 210, jumpForce: 810,
     specialName: 'Rock Breaker', specialCost: 22, specialDamage: 28,
     portraitBg: '#3c0c0c'
   },
@@ -1107,10 +1107,18 @@ function drawProceduralDigimon(ctx, charId, state, x, groundY, facing, scale, fr
   ctx.fill();
 }
 
-const SpriteCache = { instances: {} };
+// Two separate caches: the gameplay animator is owned by the entity that
+// plays it, while UI surfaces (HUD portrait, menus) get their own instances —
+// sharing one animator would reset its frame timer every time the UI draws,
+// freezing the in-game animation on a single frame.
+const SpriteCache = { instances: {}, ui: {} };
 function getSpriteAnimator(charId) {
   if (!SpriteCache.instances[charId]) SpriteCache.instances[charId] = new DigimonSprite(charId);
   return SpriteCache.instances[charId];
+}
+function getUiAnimator(charId) {
+  if (!SpriteCache.ui[charId]) SpriteCache.ui[charId] = new DigimonSprite(charId);
+  return SpriteCache.ui[charId];
 }
 
 </script>
@@ -1434,6 +1442,7 @@ class Player {
       this.grounded = false;
       AudioSys.sfx('jump');
     }
+    this._jumpHeld = inp.isDown('jump');
     if (inp.pressed('attack')) {
       if (this.attackState === 'attack1' && this.attackTimer / this.attackDuration > 0.55) {
         this.queuedCombo = true;
@@ -1463,6 +1472,9 @@ class Player {
     } else if (this.vx > targetVx) {
       this.vx = Math.max(targetVx, this.vx - accel * dtS);
     }
+
+    // variable jump height: releasing the button early cuts the ascent short
+    if (this.vy < -300 && !this._jumpHeld) this.vy = -300;
 
     this.vy = Math.min(MAX_FALL_SPEED, this.vy + GRAVITY * dtS);
     moveAndCollide(this, this.vx * dtS, this.vy * dtS, solids);
@@ -1792,12 +1804,10 @@ const HUD = {
     const def = CHARACTERS[state.charId];
     ctx.fillStyle = def.portraitBg || '#111';
     ctx.fillRect(px, py, p.w, p.h);
-    const anim = getSpriteAnimator(state.charId);
-    const savedState = anim.state, savedFrame = anim.frameIndex;
+    const anim = getUiAnimator(state.charId);
     anim.setState('idle');
-    anim.frameIndex = 0;
+    anim.update(16); // HUD draws once per game frame, so ~16ms per tick
     anim.draw(ctx, px + p.w / 2, py + p.h - 4, 1, 0.72);
-    anim.state = savedState; anim.frameIndex = savedFrame;
     ctx.restore();
 
     // HP / SP bars
@@ -2124,14 +2134,17 @@ const UI = {
 
   _drawCharPreview(canvas, charId) {
     const ctx = canvas.getContext('2d');
-    const anim = getSpriteAnimator(charId);
-    let raf;
+    // own animator instance — never the gameplay one, whose frame timer a
+    // background preview loop would keep resetting
+    const anim = new DigimonSprite(charId);
+    anim.setState('idle');
     const draw = () => {
+      // stop when removed from the DOM or the owning screen/panel is hidden
+      if (!document.body.contains(canvas) || canvas.offsetParent === null) return;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      anim.setState('idle');
       anim.update(16);
       anim.draw(ctx, canvas.width / 2, canvas.height - 6, 1, 0.85);
-      if (document.body.contains(canvas)) raf = requestAnimationFrame(draw);
+      requestAnimationFrame(draw);
     };
     draw();
   },
@@ -2215,11 +2228,11 @@ const UI = {
     this._closeAllPanels();
     const panel = document.getElementById(`panel-${key}`);
     if (!panel) return;
+    panel.classList.remove('hidden'); // unhide first: preview loops stop while hidden
     if (key === 'evolution') this._renderEvolutionPanel();
     if (key === 'backpack') this._renderBackpackPanel();
     if (key === 'save') this._renderSavePanel();
     if (key === 'map') this._renderMapPanel();
-    panel.classList.remove('hidden');
   },
 
   _closeAllPanels() {

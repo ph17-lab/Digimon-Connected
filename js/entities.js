@@ -222,6 +222,7 @@ class Player {
       this.grounded = false;
       AudioSys.sfx('jump');
     }
+    this._jumpHeld = inp.isDown('jump');
     if (inp.pressed('attack')) {
       if (this.attackState === 'attack1' && this.attackTimer / this.attackDuration > 0.55) {
         this.queuedCombo = true;
@@ -251,6 +252,9 @@ class Player {
     } else if (this.vx > targetVx) {
       this.vx = Math.max(targetVx, this.vx - accel * dtS);
     }
+
+    // variable jump height: releasing the button early cuts the ascent short
+    if (this.vy < -300 && !this._jumpHeld) this.vy = -300;
 
     this.vy = Math.min(MAX_FALL_SPEED, this.vy + GRAVITY * dtS);
     moveAndCollide(this, this.vx * dtS, this.vy * dtS, solids);
